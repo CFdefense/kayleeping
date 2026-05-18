@@ -10,8 +10,6 @@ Fetches two remote ciphertext blobs (defaults in `src/content/mod.rs`), decrypts
 curl -fsSL https://raw.githubusercontent.com/CFdefense/kayleedrop/main/scripts/install-service.sh | bash -s --
 ```
 
-Use a **single** `curl … | bash -s --` (no doubled `--`).
-
 - **Binary / data:** `~/Library/Application Support/KayleeDrop/` (default).
 - **Secrets:** **`…/KayleeDrop/.env`** (line must be `PASSWORD=…`, not `# PASSWORD=…`). Legacy **`…/env`** still works if `.env` is absent.
 - **Schedule:** daily **`LAUNCHD_HOUR`/`LAUNCHD_MINUTE`** in **system local time** (defaults **22:00**). Set macOS timezone to **America/New_York** for Eastern evening. Overrides: `LAUNCHD_HOUR=9 LAUNCHD_MINUTE=0 curl … | bash -s --`. Dev interval: `LAUNCHD_START_INTERVAL=30 bash …` (reinstall without it for calendar mode).
