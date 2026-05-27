@@ -113,9 +113,14 @@ impl Content {
         }
 
         // Decrypt and save the contents
-        let result = decrypt_content_and_save(img_body.as_ref(), txt_body.as_ref())?;
+        let (content, is_new) = decrypt_content_and_save(img_body.as_ref(), txt_body.as_ref())?;
 
-        Ok(result)
+        // If content hasn't changed, return an error indicating no new messages
+        if !is_new {
+            return Err(AppError::NoNewContent.into());
+        }
+
+        Ok(content)
     }
 
     /// Builds the initial iced window size around the decrypted bitmap plus space for caption text.

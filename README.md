@@ -15,6 +15,14 @@ Download the latest `.app` release from [GitHub Releases](https://github.com/CFd
 - **macOS**: Download the `.app` bundle and move it to your Applications folder
 - **Linux**: Download the appropriate binary for your system
 
+#### macOS: Remove Quarantine Attribute
+
+After downloading, remove the quarantine attribute to prevent "damaged app" warnings:
+
+```bash
+xattr -cr /Applications/kayleedrop.app
+```
+
 ### 2. Setup Configuration Directory
 
 Create the KayleeDrop configuration directory:

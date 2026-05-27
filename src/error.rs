@@ -20,6 +20,8 @@ pub enum AppError {
     InvalidCiphertext { details: String },
     /// UTF-8 decoding failed
     EncodingError { details: String },
+    /// No new content available (remote matches local)
+    NoNewContent,
     /// Generic error with custom message
     Generic {
         message: String,
@@ -64,6 +66,9 @@ impl AppError {
                     "Text Encoding Error\n\nThe decrypted text contains invalid UTF-8 characters.\n\nDetails: {}",
                     details
                 )
+            }
+            AppError::NoNewContent => {
+                "No New Messages\n\nThe content on the server matches what you already have locally.\n\nCheck back later for new updates!".to_string()
             }
             AppError::Generic { message, trace } => {
                 if let Some(t) = trace {
@@ -110,6 +115,11 @@ impl AppError {
             AppError::EncodingError { .. } => vec![
                 "The encrypted text may be corrupted".to_string(),
                 "Try re-encrypting the content with valid UTF-8 text".to_string(),
+            ],
+            AppError::NoNewContent => vec![
+                "This is normal - it means you're up to date!".to_string(),
+                "New content will appear here when it's available".to_string(),
+                "The app checks the remote server each time you open it".to_string(),
             ],
             AppError::Generic { .. } => vec![
                 "Check the error details above".to_string(),

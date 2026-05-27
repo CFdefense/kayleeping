@@ -65,6 +65,8 @@ pub fn encrypt_content_and_write(img_path: &str, text: &str) -> Result<(), Box<d
 /// iced-friendly [`crate::content::Content`]. Will also ensure that the new Content is new
 /// otherwise write will not proceed.
 ///
+/// Returns a tuple of (Content, is_new) where is_new indicates if the content has changed.
+///
 /// # Errors
 ///
 /// Same classes as [`decrypt`] (bad password/mac), `"PASSWORD"` omissions, caption UTF-8 issues, as
@@ -72,7 +74,7 @@ pub fn encrypt_content_and_write(img_path: &str, text: &str) -> Result<(), Box<d
 pub fn decrypt_content_and_save(
     img_blob: &[u8],
     txt_blob: &[u8],
-) -> Result<Content, Box<dyn Error>> {
+) -> Result<(Content, bool), Box<dyn Error>> {
     // Load the PASSWORD env var
     let password = crate::config::load_password()?;
 
@@ -113,22 +115,27 @@ pub fn decrypt_content_and_save(
     let curr_img_bytes = fs::read(&img_path).unwrap_or_default();
     let curr_txt_bytes = fs::read(&txt_path).unwrap_or_default();
 
+    // Check if content has changed
+    let img_changed = curr_img_bytes != img_bytes;
+    let txt_changed = curr_txt_bytes != txt_bytes;
+    let is_new = img_changed || txt_changed;
+
     // Only write if content has changed
-    if curr_img_bytes != img_bytes {
+    if img_changed {
         fs::write(&img_path, &img_bytes).map_err(|e| AppError::FileSystemError {
             path: img_path.display().to_string(),
             details: format!("Failed to write decrypted image: {}", e),
         })?;
     }
 
-    if curr_txt_bytes != txt_bytes {
+    if txt_changed {
         fs::write(&txt_path, &text).map_err(|e| AppError::FileSystemError {
             path: txt_path.display().to_string(),
             details: format!("Failed to write decrypted text: {}", e),
         })?;
     }
 
-    Ok(content_from_plaintext(&img_bytes, text))
+    Ok((content_from_plaintext(&img_bytes, text), is_new))
 }
 
 /// Reconstructs plaintext from the serialized layout emitted by the internal encrypt routine.
