@@ -2,28 +2,23 @@
 //!
 //! Public entry points: [`encrypt_content_and_write`], [`decrypt_content_and_save`], [`content_from_plaintext`].
 
-use crate::content::Content;
 use aes_gcm::aead::Aead;
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use iced::widget::image::Handle;
 use pbkdf2::pbkdf2_hmac;
 use rand::RngCore;
 use sha2::Sha256;
-use std::{env::var, error::Error, fs, path::Path};
+use std::{error::Error, fs};
 
-/// Encrypted image blob path (relative to process working directory).
-pub const IMG_SRC_PATH: &str = "data/source/img.enc";
-/// Encrypted text blob path (relative to process working directory).
-pub const TXT_SRC_PATH: &str = "data/source/txt.enc";
-/// Decrypted image output path.
-pub const IMG_DEST_PATH: &str = "data/destination/img.png";
-/// Decrypted caption output path.
-pub const TXT_DEST_PATH: &str = "data/destination/txt.out";
+use crate::config::{
+    decrypted_img_path, decrypted_txt_path, encrypted_img_path, encrypted_txt_path,
+};
+use crate::content::Content;
 
 /// CLI helper invoked as `exe <PNG> "<caption>"` when three arguments are supplied.
 ///
 /// Reads the plaintext image bytes from `img_path`, encrypts BOTH blobs with PBKDF2 + AES-GCM keyed by
-/// the `"PASSWORD"` environment variable, writes [`IMG_SRC_PATH`] / [`TXT_SRC_PATH`], creating parent dirs
+/// the `"PASSWORD"` environment variable, writes to the encrypted file path creating parent dirs
 /// on demand.
 ///
 /// # Errors
@@ -31,7 +26,8 @@ pub const TXT_DEST_PATH: &str = "data/destination/txt.out";
 /// Bubbled when `"PASSWORD"` is unset, filesystem reads fail on the PNG, or ciphertext cannot be flushed
 /// atomically beneath `data/source`.
 pub fn encrypt_content_and_write(img_path: &str, text: &str) -> Result<(), Box<dyn Error>> {
-    let password = var("PASSWORD").map_err(|_| "PASSWORD environment variable is not set")?;
+    // Load the PASSWORD env var
+    let password = crate::config::load_password()?;
 
     let img = fs::read(img_path)
         .map_err(|e| -> Box<dyn Error> { format!("cannot read image `{img_path}`: {e}").into() })?;
@@ -39,10 +35,8 @@ pub fn encrypt_content_and_write(img_path: &str, text: &str) -> Result<(), Box<d
     let img_encrypted = encrypt(&img, &password);
     let txt_encrypted = encrypt(text.as_bytes(), &password);
 
-    ensure_parent_dir(IMG_SRC_PATH)?;
-    ensure_parent_dir(TXT_SRC_PATH)?;
-    fs::write(IMG_SRC_PATH, img_encrypted)?;
-    fs::write(TXT_SRC_PATH, txt_encrypted)?;
+    fs::write(encrypted_img_path(), img_encrypted)?;
+    fs::write(encrypted_txt_path(), txt_encrypted)?;
 
     Ok(())
 }
@@ -50,7 +44,7 @@ pub fn encrypt_content_and_write(img_path: &str, text: &str) -> Result<(), Box<d
 /// End-to-end path used during [`crate::content::Content::fetch_blocking`] and GUI startup workflows.
 ///
 /// Accepts ciphertext slices (typically fetched over HTTP), decrypts BOTH using `"PASSWORD"` from the
-/// environment snapshot, persists PNG + UTF-8 text under [`IMG_DEST_PATH`] / [`TXT_DEST_PATH`],
+/// environment snapshot, persists PNG + UTF-8 text under decrypted paths
 /// infers PNG dimensions from the IHDR chunk (fallback `(256, 256)` outside PNG), and packages an
 /// iced-friendly [`crate::content::Content`]. Will also ensure that the new Content is new
 /// otherwise write will not proceed.
@@ -63,25 +57,24 @@ pub fn decrypt_content_and_save(
     img_blob: &[u8],
     txt_blob: &[u8],
 ) -> Result<Content, Box<dyn Error>> {
-    let password = var("PASSWORD").map_err(|_| "PASSWORD environment variable is not set")?;
+    // load the PASSWORD env var
+    let password = crate::config::load_password()?;
 
+    // decrypt the provided blobs
     let img_bytes = decrypt(img_blob, &password)?;
     let txt_bytes = decrypt(txt_blob, &password)?;
 
     let text = String::from_utf8(txt_bytes.clone())?;
 
-    ensure_parent_dir(IMG_DEST_PATH)?;
-    ensure_parent_dir(TXT_DEST_PATH)?;
-
-    let curr_img_bytes = fs::read(IMG_DEST_PATH)?;
-    let curr_txt_bytes = fs::read(TXT_DEST_PATH)?;
+    let curr_img_bytes = fs::read(decrypted_img_path()?)?;
+    let curr_txt_bytes = fs::read(decrypted_txt_path()?)?;
 
     if curr_img_bytes != img_bytes {
-        fs::write(IMG_DEST_PATH, &img_bytes)?;
+        fs::write(decrypted_img_path()?, &img_bytes)?;
     }
 
     if curr_txt_bytes != txt_bytes {
-        fs::write(TXT_DEST_PATH, &text)?;
+        fs::write(decrypted_txt_path()?, &text)?;
     }
 
     Ok(content_from_plaintext(&img_bytes, text))
@@ -181,19 +174,6 @@ fn png_pixel_size(bytes: &[u8]) -> Option<(u32, u32)> {
     let w = u32::from_be_bytes(bytes.get(16..20)?.try_into().ok()?);
     let h = u32::from_be_bytes(bytes.get(20..24)?.try_into().ok()?);
     (w > 0 && h > 0).then_some((w, h))
-}
-
-/// Recursively ensures the parent folder for `path` exists before writing ciphertext / plaintext blobs.
-///
-/// No-ops cleanly when no parent (`"relative.txt"` style) applies. Intended for bundled `data/...`
-/// hierarchies tracked in-repo.
-fn ensure_parent_dir(path: &str) -> Result<(), Box<dyn Error>> {
-    if let Some(dir) = Path::new(path).parent() {
-        if !dir.as_os_str().is_empty() {
-            fs::create_dir_all(dir)?;
-        }
-    }
-    Ok(())
 }
 
 /// Derives the 32-byte AES key used by both [`encrypt`] and [`decrypt`].

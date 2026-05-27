@@ -1,4 +1,5 @@
 mod app;
+mod config;
 mod content;
 mod encryption;
 
@@ -15,8 +16,7 @@ use crate::content::{Content, REMOTE_IMG_URL, REMOTE_TEXT_URL};
 
 /// Program entrypoint: routes to GUI mode (`argv.len() == 1`), encrypt CLI (`3` arguments), or help + exit `64`.
 fn main() -> Result<(), Box<dyn Error>> {
-    dotenvy::dotenv().ok();
-
+    // next get the arguments provided in the call
     let args: Vec<String> = args().collect();
     let bin = args.first().map(String::as_str).unwrap_or("kayleedrop");
 
