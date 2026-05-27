@@ -14,6 +14,7 @@ use crate::config::{
     decrypted_img_path, decrypted_txt_path, encrypted_img_path, encrypted_txt_path,
 };
 use crate::content::Content;
+use crate::error::AppError;
 
 /// CLI helper invoked as `exe <PNG> "<caption>"` when three arguments are supplied.
 ///
@@ -57,24 +58,64 @@ pub fn decrypt_content_and_save(
     img_blob: &[u8],
     txt_blob: &[u8],
 ) -> Result<Content, Box<dyn Error>> {
-    // load the PASSWORD env var
+    // Load the PASSWORD env var
     let password = crate::config::load_password()?;
 
-    // decrypt the provided blobs
-    let img_bytes = decrypt(img_blob, &password)?;
-    let txt_bytes = decrypt(txt_blob, &password)?;
+    // Decrypt the provided blobs
+    let img_bytes = decrypt(img_blob, &password).map_err(|e| AppError::DecryptionError {
+        details: format!(
+            "Failed to decrypt image (size: {} bytes, password length: {}): {}",
+            img_blob.len(),
+            password.len(),
+            e
+        ),
+    })?;
 
-    let text = String::from_utf8(txt_bytes.clone())?;
+    let txt_bytes = decrypt(txt_blob, &password).map_err(|e| AppError::DecryptionError {
+        details: format!(
+            "Failed to decrypt text (size: {} bytes, password length: {}): {}",
+            txt_blob.len(),
+            password.len(),
+            e
+        ),
+    })?;
 
-    let curr_img_bytes = fs::read(decrypted_img_path()?)?;
-    let curr_txt_bytes = fs::read(decrypted_txt_path()?)?;
+    let text = String::from_utf8(txt_bytes.clone()).map_err(|e| AppError::EncodingError {
+        details: format!("Decrypted text is not valid UTF-8: {}", e),
+    })?;
+
+    let img_path = decrypted_img_path().map_err(|e| AppError::FileSystemError {
+        path: "decrypted image path".to_string(),
+        details: e.to_string(),
+    })?;
+
+    let txt_path = decrypted_txt_path().map_err(|e| AppError::FileSystemError {
+        path: "decrypted text path".to_string(),
+        details: e.to_string(),
+    })?;
+
+    let curr_img_bytes = fs::read(&img_path).map_err(|e| AppError::FileSystemError {
+        path: img_path.display().to_string(),
+        details: format!("Failed to read existing image: {}", e),
+    })?;
+
+    let curr_txt_bytes = fs::read(&txt_path).map_err(|e| AppError::FileSystemError {
+        path: txt_path.display().to_string(),
+        details: format!("Failed to read existing text: {}", e),
+    })?;
 
     if curr_img_bytes != img_bytes {
-        fs::write(decrypted_img_path()?, &img_bytes)?;
+        fs::write(&img_path, &img_bytes).map_err(|e| AppError::FileSystemError {
+            path: img_path.display().to_string(),
+            details: format!("Failed to write decrypted image: {}", e),
+        })?;
     }
 
     if curr_txt_bytes != txt_bytes {
-        fs::write(decrypted_txt_path()?, &text)?;
+        fs::write(&txt_path, &text).map_err(|e| AppError::FileSystemError {
+            path: txt_path.display().to_string(),
+            details: format!("Failed to write decrypted text: {}", e),
+        })?;
     }
 
     Ok(content_from_plaintext(&img_bytes, text))
@@ -93,11 +134,13 @@ pub fn decrypt_content_and_save(
 fn decrypt(blob: &[u8], password: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     const MIN: usize = 28;
     if blob.len() < MIN {
-        return Err(format!(
-            "invalid or truncated ciphertext: got {} bytes, need at least {} (wrong URL/file, plaintext 404/HTML, or not our binary format)",
-            blob.len(),
-            MIN
-        )
+        return Err(AppError::InvalidCiphertext {
+            details: format!(
+                "Truncated ciphertext: got {} bytes, need at least {} (wrong URL/file, plaintext 404/HTML, or not our binary format)",
+                blob.len(),
+                MIN
+            ),
+        }
         .into());
     }
 
@@ -107,13 +150,15 @@ fn decrypt(blob: &[u8], password: &str) -> Result<Vec<u8>, Box<dyn Error>> {
 
     let key = derive_key(password, salt);
 
-    let cipher = Aes256Gcm::new_from_slice(&key)?;
+    let cipher = Aes256Gcm::new_from_slice(&key).map_err(|e| AppError::DecryptionError {
+        details: format!("Failed to initialize cipher: {}", e),
+    })?;
     let nonce = Nonce::from_slice(nonce_bytes);
 
     let plaintext = cipher
         .decrypt(nonce, ciphertext)
-        .map_err(|_| -> Box<dyn Error> {
-            "decrypt failed (wrong PASSWORD or corrupt ciphertext)".into()
+        .map_err(|_| AppError::DecryptionError {
+            details: "Decryption failed - wrong PASSWORD or corrupt ciphertext".to_string(),
         })?;
 
     Ok(plaintext)

@@ -2,12 +2,23 @@
 use std::path::PathBuf;
 use std::{env, error::Error, fs};
 
+use crate::error::AppError;
+
 /// Function to resolve and initialize .env directories for PASSWORD
 ///
 /// Will fail if password not set
 ///
 /// Will create directories if not present
 pub fn load_password() -> Result<String, Box<dyn Error>> {
+    // First check if PASSWORD is already set in the environment
+    if let Ok(password) = env::var("PASSWORD") {
+        eprintln!(
+            "DEBUG: Loaded PASSWORD from environment (length: {})",
+            password.len()
+        );
+        return Ok(password);
+    }
+
     // use the config dirs to get the default dir across many systems
     // on MACOS ~/Library/Application Support/
     // on Linux ~/.local/share/
@@ -15,11 +26,46 @@ pub fn load_password() -> Result<String, Box<dyn Error>> {
 
     // then get the env path
     let env_path = app_dir.join(".env");
+    eprintln!("DEBUG: Looking for .env at: {}", env_path.display());
+    eprintln!("DEBUG: .env exists: {}", env_path.exists());
 
     // finally read the .env file variables from the final path
-    let _ = dotenvy::from_path(&env_path);
+    if env_path.exists() {
+        dotenvy::from_path(&env_path).map_err(|e| {
+            let err: Box<dyn Error> = format!(
+                "Failed to load .env file from {}: {}",
+                env_path.display(),
+                e
+            )
+            .into();
+            err
+        })?;
+        eprintln!("DEBUG: Successfully loaded .env file");
+    }
 
-    Ok(env::var("PASSWORD")?)
+    let password = env::var("PASSWORD").map_err(|_| {
+        let err: Box<dyn Error> = AppError::Generic {
+            message: format!(
+                "PASSWORD not found in environment or .env file.\nChecked: {}",
+                env_path.display()
+            ),
+            trace: Some(format!(
+                ".env file exists: {}\nCurrent working directory: {:?}",
+                env_path.exists(),
+                env::current_dir().ok()
+            )),
+        }
+        .into();
+        err
+    })?;
+
+    eprintln!(
+        "DEBUG: Loaded PASSWORD from .env (length: {}, first char: {:?})",
+        password.len(),
+        password.chars().next()
+    );
+
+    Ok(password)
 }
 
 /// Function to resolve the general kayleedrop dir
@@ -34,7 +80,7 @@ pub fn app_data_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
         .join("kayleedrop");
 
     fs::create_dir_all(&dir)?;
-    
+
     Ok(dir)
 }
 

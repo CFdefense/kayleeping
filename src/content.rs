@@ -3,6 +3,7 @@
 //! See [`Content::fetch_blocking`]
 
 use crate::encryption::decrypt_content_and_save;
+use crate::error::AppError;
 use iced::widget::image;
 use iced::{Size, window};
 use reqwest;
@@ -58,27 +59,60 @@ impl Content {
     ///
     /// # Errors
     ///
-    /// Covers HTTP/stack failures when downloading, decryption/AEAD mismatches when the password does
-    /// not match, UTF-8 issues in the decrypted caption, or filesystem persistence errors surfaced by
-    /// [`crate::encryption::decrypt_content_and_save`].
+    /// Returns structured [`AppError`] variants for network failures, empty responses, decryption issues,
+    /// UTF-8 problems, or filesystem errors. All errors include detailed context for user feedback.
     pub async fn fetch_blocking(
         img_hook: &str,
         text_hook: &str,
     ) -> Result<Content, Box<dyn Error>> {
-        // get the encrpyted image from the remote store
-        let img_response = reqwest::get(img_hook).await?;
-        let img_body = img_response.bytes().await?;
+        // Fetch the encrypted image from the remote store
+        let img_response = reqwest::get(img_hook)
+            .await
+            .map_err(|e| AppError::NetworkError {
+                url: img_hook.to_string(),
+                details: format!("Failed to fetch image: {}", e),
+            })?;
 
-        // get the encrypted text from the remote store
-        let txt_response = reqwest::get(text_hook).await?;
-        let txt_body = txt_response.bytes().await?;
+        let img_body = img_response
+            .bytes()
+            .await
+            .map_err(|e| AppError::NetworkError {
+                url: img_hook.to_string(),
+                details: format!("Failed to read image response: {}", e),
+            })?;
 
-        // err if we got empty data
-        if img_body.is_empty() || txt_body.is_empty() {
-            return Err("remote returned empty encrypted payload".into());
+        // Fetch the encrypted text from the remote store
+        let txt_response = reqwest::get(text_hook)
+            .await
+            .map_err(|e| AppError::NetworkError {
+                url: text_hook.to_string(),
+                details: format!("Failed to fetch text: {}", e),
+            })?;
+
+        let txt_body = txt_response
+            .bytes()
+            .await
+            .map_err(|e| AppError::NetworkError {
+                url: text_hook.to_string(),
+                details: format!("Failed to read text response: {}", e),
+            })?;
+
+        // Check for empty data
+        if img_body.is_empty() {
+            return Err(AppError::InvalidCiphertext {
+                details: format!("Image response from {} was empty", img_hook),
+            }
+            .into());
         }
 
-        // decrypt and save the contents
+        if txt_body.is_empty() {
+            return Err(AppError::InvalidCiphertext {
+                details: format!("Text response from {} was empty", text_hook),
+            }
+            .into());
+        }
+
+        // Decrypt and save the contents
         let result = decrypt_content_and_save(img_body.as_ref(), txt_body.as_ref())?;
 
         Ok(result)
