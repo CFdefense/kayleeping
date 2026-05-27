@@ -109,16 +109,11 @@ pub fn decrypt_content_and_save(
         details: e.to_string(),
     })?;
 
-    let curr_img_bytes = fs::read(&img_path).map_err(|e| AppError::FileSystemError {
-        path: img_path.display().to_string(),
-        details: format!("Failed to read existing image: {}", e),
-    })?;
+    // Read existing files if they exist, otherwise treat as empty (first run)
+    let curr_img_bytes = fs::read(&img_path).unwrap_or_default();
+    let curr_txt_bytes = fs::read(&txt_path).unwrap_or_default();
 
-    let curr_txt_bytes = fs::read(&txt_path).map_err(|e| AppError::FileSystemError {
-        path: txt_path.display().to_string(),
-        details: format!("Failed to read existing text: {}", e),
-    })?;
-
+    // Only write if content has changed
     if curr_img_bytes != img_bytes {
         fs::write(&img_path, &img_bytes).map_err(|e| AppError::FileSystemError {
             path: img_path.display().to_string(),

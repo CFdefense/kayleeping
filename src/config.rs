@@ -12,10 +12,6 @@ use crate::error::AppError;
 pub fn load_password() -> Result<String, Box<dyn Error>> {
     // First check if PASSWORD is already set in the environment
     if let Ok(password) = env::var("PASSWORD") {
-        eprintln!(
-            "DEBUG: Loaded PASSWORD from environment (length: {})",
-            password.len()
-        );
         return Ok(password);
     }
 
@@ -26,8 +22,6 @@ pub fn load_password() -> Result<String, Box<dyn Error>> {
 
     // then get the env path
     let env_path = app_dir.join(".env");
-    eprintln!("DEBUG: Looking for .env at: {}", env_path.display());
-    eprintln!("DEBUG: .env exists: {}", env_path.exists());
 
     // finally read the .env file variables from the final path
     if env_path.exists() {
@@ -40,10 +34,9 @@ pub fn load_password() -> Result<String, Box<dyn Error>> {
             .into();
             err
         })?;
-        eprintln!("DEBUG: Successfully loaded .env file");
     }
 
-    let password = env::var("PASSWORD").map_err(|_| {
+    env::var("PASSWORD").map_err(|_| {
         let err: Box<dyn Error> = AppError::Generic {
             message: format!(
                 "PASSWORD not found in environment or .env file.\nChecked: {}",
@@ -57,15 +50,7 @@ pub fn load_password() -> Result<String, Box<dyn Error>> {
         }
         .into();
         err
-    })?;
-
-    eprintln!(
-        "DEBUG: Loaded PASSWORD from .env (length: {}, first char: {:?})",
-        password.len(),
-        password.chars().next()
-    );
-
-    Ok(password)
+    })
 }
 
 /// Function to resolve the general kayleedrop dir
