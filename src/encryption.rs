@@ -36,8 +36,23 @@ pub fn encrypt_content_and_write(img_path: &str, text: &str) -> Result<(), Box<d
     let img_encrypted = encrypt(&img, &password);
     let txt_encrypted = encrypt(text.as_bytes(), &password);
 
-    fs::write(encrypted_img_path(), img_encrypted)?;
-    fs::write(encrypted_txt_path(), txt_encrypted)?;
+    let img_dest = encrypted_img_path();
+    let txt_dest = encrypted_txt_path();
+
+    fs::write(&img_dest, &img_encrypted)?;
+    fs::write(&txt_dest, &txt_encrypted)?;
+
+    println!("Successfully encrypted and saved:");
+    println!(
+        "  Image: {} ({} bytes)",
+        img_dest.display(),
+        img_encrypted.len()
+    );
+    println!(
+        "  Text:  {} ({} bytes)",
+        txt_dest.display(),
+        txt_encrypted.len()
+    );
 
     Ok(())
 }
