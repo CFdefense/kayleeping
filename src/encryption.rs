@@ -1,7 +1,6 @@
-//! AES-256-GCM encryption helpers, path constants, and PNG IHDR parsing for window sizing.
+//! AES-256-GCM encrypt
 //!
-//! Public entry points: [`encrypt_content_and_write`], [`decrypt_content_and_save`], [`decrypt`],
-//! [`content_from_plaintext`].
+//! Public entry points: [`encrypt_content_and_write`], [`decrypt_content_and_save`], [`content_from_plaintext`].
 
 use crate::content::Content;
 use aes_gcm::aead::Aead;
@@ -20,6 +19,148 @@ pub const TXT_SRC_PATH: &str = "data/source/txt.enc";
 pub const IMG_DEST_PATH: &str = "data/destination/img.png";
 /// Decrypted caption output path.
 pub const TXT_DEST_PATH: &str = "data/destination/txt.out";
+
+/// CLI helper invoked as `exe <PNG> "<caption>"` when three arguments are supplied.
+///
+/// Reads the plaintext image bytes from `img_path`, encrypts BOTH blobs with PBKDF2 + AES-GCM keyed by
+/// the `"PASSWORD"` environment variable, writes [`IMG_SRC_PATH`] / [`TXT_SRC_PATH`], creating parent dirs
+/// on demand.
+///
+/// # Errors
+///
+/// Bubbled when `"PASSWORD"` is unset, filesystem reads fail on the PNG, or ciphertext cannot be flushed
+/// atomically beneath `data/source`.
+pub fn encrypt_content_and_write(img_path: &str, text: &str) -> Result<(), Box<dyn Error>> {
+    let password = var("PASSWORD").map_err(|_| "PASSWORD environment variable is not set")?;
+
+    let img = fs::read(img_path)
+        .map_err(|e| -> Box<dyn Error> { format!("cannot read image `{img_path}`: {e}").into() })?;
+
+    let img_encrypted = encrypt(&img, &password);
+    let txt_encrypted = encrypt(text.as_bytes(), &password);
+
+    ensure_parent_dir(IMG_SRC_PATH)?;
+    ensure_parent_dir(TXT_SRC_PATH)?;
+    fs::write(IMG_SRC_PATH, img_encrypted)?;
+    fs::write(TXT_SRC_PATH, txt_encrypted)?;
+
+    Ok(())
+}
+
+/// End-to-end path used during [`crate::content::Content::fetch_blocking`] and GUI startup workflows.
+///
+/// Accepts ciphertext slices (typically fetched over HTTP), decrypts BOTH using `"PASSWORD"` from the
+/// environment snapshot, persists PNG + UTF-8 text under [`IMG_DEST_PATH`] / [`TXT_DEST_PATH`],
+/// infers PNG dimensions from the IHDR chunk (fallback `(256, 256)` outside PNG), and packages an
+/// iced-friendly [`crate::content::Content`]. Will also ensure that the new Content is new
+/// otherwise write will not proceed.
+///
+/// # Errors
+///
+/// Same classes as [`decrypt`] (bad password/mac), `"PASSWORD"` omissions, caption UTF-8 issues, as
+/// well as inability to mkdir/write under `data/destination`.
+pub fn decrypt_content_and_save(
+    img_blob: &[u8],
+    txt_blob: &[u8],
+) -> Result<Content, Box<dyn Error>> {
+    let password = var("PASSWORD").map_err(|_| "PASSWORD environment variable is not set")?;
+
+    let img_bytes = decrypt(img_blob, &password)?;
+    let txt_bytes = decrypt(txt_blob, &password)?;
+
+    let text = String::from_utf8(txt_bytes.clone())?;
+
+    ensure_parent_dir(IMG_DEST_PATH)?;
+    ensure_parent_dir(TXT_DEST_PATH)?;
+
+    let curr_img_bytes = fs::read(IMG_DEST_PATH)?;
+    let curr_txt_bytes = fs::read(TXT_DEST_PATH)?;
+
+    if curr_img_bytes != img_bytes {
+        fs::write(IMG_DEST_PATH, &img_bytes)?;
+    }
+
+    if curr_txt_bytes != txt_bytes {
+        fs::write(TXT_DEST_PATH, &text)?;
+    }
+
+    Ok(content_from_plaintext(&img_bytes, text))
+}
+
+/// Reconstructs plaintext from the serialized layout emitted by the internal encrypt routine.
+///
+/// Splits the fixed header (salt + nonce) from the AEAD payload, re-derives the AES-256 key (100k
+/// PBKDF2-HMAC-SHA256 iterations), verifies the authentication tag, then returns the inner bytes on
+/// success.
+///
+/// # Errors
+///
+/// Returns boxed errors for truncated buffers, password/tag mismatches (`decrypt failed ...`), or malformed
+/// ciphertext that cannot be deserialized by `aes-gcm`.
+fn decrypt(blob: &[u8], password: &str) -> Result<Vec<u8>, Box<dyn Error>> {
+    const MIN: usize = 28;
+    if blob.len() < MIN {
+        return Err(format!(
+            "invalid or truncated ciphertext: got {} bytes, need at least {} (wrong URL/file, plaintext 404/HTML, or not our binary format)",
+            blob.len(),
+            MIN
+        )
+        .into());
+    }
+
+    let salt = &blob[0..16];
+    let nonce_bytes = &blob[16..28];
+    let ciphertext = &blob[28..];
+
+    let key = derive_key(password, salt);
+
+    let cipher = Aes256Gcm::new_from_slice(&key)?;
+    let nonce = Nonce::from_slice(nonce_bytes);
+
+    let plaintext = cipher
+        .decrypt(nonce, ciphertext)
+        .map_err(|_| -> Box<dyn Error> {
+            "decrypt failed (wrong PASSWORD or corrupt ciphertext)".into()
+        })?;
+
+    Ok(plaintext)
+}
+
+/// Builds the on-wire ciphertext framing shared by BOTH image and caption blobs.
+///
+/// Layout concatenates, in order:
+///
+/// - 16-byte PBKDF2 salt
+/// - 12-byte AES-GCM nonce (`IV`)
+/// - ciphertext octets authenticated with the GMAC tag appended by AES-GCM
+///
+/// Randomness derives from [`rand::thread_rng`]; ciphertext differs every invocation even for identical plaintext.
+fn encrypt(content: &[u8], password: &str) -> Vec<u8> {
+    let mut salt = [0u8; 16];
+    rand::thread_rng().fill_bytes(&mut salt);
+
+    let key = derive_key(password, &salt);
+
+    let cipher = Aes256Gcm::new_from_slice(&key).unwrap();
+
+    let mut nonce_bytes = [0u8; 12];
+    rand::thread_rng().fill_bytes(&mut nonce_bytes);
+    let nonce = Nonce::from_slice(&nonce_bytes);
+
+    let ciphertext = cipher.encrypt(nonce, content).unwrap();
+
+    [salt.to_vec(), nonce_bytes.to_vec(), ciphertext].concat()
+}
+
+/// Lightweight constructor for tests and for post-decrypt assembly without extra I/O.
+///
+/// Accepts raw image bytes (typically a PNG) plus the already-decoded UTF-8 caption. When the bytes
+/// lack a valid IHDR header, the returned [`crate::content::Content`] uses `(256, 256)` for its
+/// `image_size` tuple so iced still receives reasonable window hints.
+pub fn content_from_plaintext(img_plain: &[u8], text: String) -> Content {
+    let image_size = png_pixel_size(img_plain).unwrap_or((256, 256));
+    Content::new(Handle::from_bytes(img_plain.to_vec()), image_size, text)
+}
 
 /// Extracts IHDR dimensions from an in-memory PNG without decoding scanlines.
 ///
@@ -55,143 +196,6 @@ fn ensure_parent_dir(path: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// CLI helper invoked as `exe <PNG> "<caption>"` when three arguments are supplied.
-///
-/// Reads the plaintext image bytes from `img_path`, encrypts BOTH blobs with PBKDF2 + AES-GCM keyed by
-/// the `"PASSWORD"` environment variable, writes [`IMG_SRC_PATH`] / [`TXT_SRC_PATH`], creating parent dirs
-/// on demand.
-///
-/// # Errors
-///
-/// Bubbled when `"PASSWORD"` is unset, filesystem reads fail on the PNG, or ciphertext cannot be flushed
-/// atomically beneath `data/source`.
-pub fn encrypt_content_and_write(img_path: &str, text: &str) -> Result<(), Box<dyn Error>> {
-    let password = var("PASSWORD").map_err(|_| "PASSWORD environment variable is not set")?;
-
-    let img = fs::read(img_path)
-        .map_err(|e| -> Box<dyn Error> { format!("cannot read image `{img_path}`: {e}").into() })?;
-
-    let img_encrypted = encrypt(&img, &password);
-    let txt_encrypted = encrypt(text.as_bytes(), &password);
-
-    ensure_parent_dir(IMG_SRC_PATH)?;
-    ensure_parent_dir(TXT_SRC_PATH)?;
-    fs::write(IMG_SRC_PATH, img_encrypted)?;
-    fs::write(TXT_SRC_PATH, txt_encrypted)?;
-
-    Ok(())
-}
-
-/// Builds the on-wire ciphertext framing shared by BOTH image and caption blobs.
-///
-/// Layout concatenates, in order:
-///
-/// - 16-byte PBKDF2 salt
-/// - 12-byte AES-GCM nonce (`IV`)
-/// - ciphertext octets authenticated with the GMAC tag appended by AES-GCM
-///
-/// Randomness derives from [`rand::thread_rng`]; ciphertext differs every invocation even for identical plaintext.
-fn encrypt(content: &[u8], password: &str) -> Vec<u8> {
-    let mut salt = [0u8; 16];
-    rand::thread_rng().fill_bytes(&mut salt);
-
-    let key = derive_key(password, &salt);
-
-    let cipher = Aes256Gcm::new_from_slice(&key).unwrap();
-
-    let mut nonce_bytes = [0u8; 12];
-    rand::thread_rng().fill_bytes(&mut nonce_bytes);
-    let nonce = Nonce::from_slice(&nonce_bytes);
-
-    let ciphertext = cipher.encrypt(nonce, content).unwrap();
-
-    [salt.to_vec(), nonce_bytes.to_vec(), ciphertext].concat()
-}
-
-/// End-to-end path used during [`crate::content::Content::fetch_blocking`] and GUI startup workflows.
-///
-/// Accepts ciphertext slices (typically fetched over HTTP), decrypts BOTH using `"PASSWORD"` from the
-/// environment snapshot, persists PNG + UTF-8 text under [`IMG_DEST_PATH`] / [`TXT_DEST_PATH`],
-/// infers PNG dimensions from the IHDR chunk (fallback `(256, 256)` outside PNG), and packages an
-/// iced-friendly [`crate::content::Content`].
-///
-/// # Errors
-///
-/// Same classes as [`decrypt`] (bad password/mac), `"PASSWORD"` omissions, caption UTF-8 issues, as
-/// well as inability to mkdir/write under `data/destination`.
-pub fn decrypt_content_and_save(
-    img_blob: &[u8],
-    txt_blob: &[u8],
-) -> Result<Content, Box<dyn Error>> {
-    let password = var("PASSWORD").map_err(|_| "PASSWORD environment variable is not set")?;
-
-    let img_bytes = decrypt(img_blob, &password)?;
-    let txt_bytes = decrypt(txt_blob, &password)?;
-
-    let text = String::from_utf8(txt_bytes)?;
-
-    ensure_parent_dir(IMG_DEST_PATH)?;
-    ensure_parent_dir(TXT_DEST_PATH)?;
-
-    fs::write(IMG_DEST_PATH, &img_bytes)?;
-    fs::write(TXT_DEST_PATH, &text)?;
-
-    Ok(content_from_plaintext(&img_bytes, text))
-}
-
-/// Lightweight constructor for tests and for post-decrypt assembly without extra I/O.
-///
-/// Accepts raw image bytes (typically a PNG) plus the already-decoded UTF-8 caption. When the bytes
-/// lack a valid IHDR header, the returned [`crate::content::Content`] uses `(256, 256)` for its
-/// `image_size` tuple so iced still receives reasonable window hints.
-pub fn content_from_plaintext(img_plain: &[u8], text: String) -> Content {
-    let image_size = png_pixel_size(img_plain).unwrap_or((256, 256));
-    Content::new(
-        Handle::from_bytes(img_plain.to_vec()),
-        image_size,
-        text,
-    )
-}
-
-/// Reconstructs plaintext from the serialized layout emitted by the internal encrypt routine.
-///
-/// Splits the fixed header (salt + nonce) from the AEAD payload, re-derives the AES-256 key (100k
-/// PBKDF2-HMAC-SHA256 iterations), verifies the authentication tag, then returns the inner bytes on
-/// success.
-///
-/// # Errors
-///
-/// Returns boxed errors for truncated buffers, password/tag mismatches (`decrypt failed ...`), or malformed
-/// ciphertext that cannot be deserialized by `aes-gcm`.
-pub fn decrypt(blob: &[u8], password: &str) -> Result<Vec<u8>, Box<dyn Error>> {
-    const MIN: usize = 28;
-    if blob.len() < MIN {
-        return Err(format!(
-            "invalid or truncated ciphertext: got {} bytes, need at least {} (wrong URL/file, plaintext 404/HTML, or not our binary format)",
-            blob.len(),
-            MIN
-        )
-        .into());
-    }
-
-    let salt = &blob[0..16];
-    let nonce_bytes = &blob[16..28];
-    let ciphertext = &blob[28..];
-
-    let key = derive_key(password, salt);
-
-    let cipher = Aes256Gcm::new_from_slice(&key)?;
-    let nonce = Nonce::from_slice(nonce_bytes);
-
-    let plaintext = cipher
-        .decrypt(nonce, ciphertext)
-        .map_err(|_| -> Box<dyn Error> {
-            "decrypt failed (wrong PASSWORD or corrupt ciphertext)".into()
-        })?;
-
-    Ok(plaintext)
-}
-
 /// Derives the 32-byte AES key used by both [`encrypt`] and [`decrypt`].
 ///
 /// Wraps PBKDF2-HMAC-SHA256 (`100_000` iterations) keyed by `password` / `salt`.
@@ -207,7 +211,7 @@ fn derive_key(password: &str, salt: &[u8]) -> [u8; 32] {
 mod tests {
     use super::*;
 
-    const FIXTURE_PNG: &[u8] = include_bytes!("../../tests/fixtures/3x7.png");
+    const FIXTURE_PNG: &[u8] = include_bytes!("../tests/fixtures/3x7.png");
 
     #[test]
     fn png_pixel_size_reads_ihdr() {
@@ -275,5 +279,4 @@ mod tests {
         assert_eq!(rebuilt.image_size, (3, 7));
         assert_eq!(rebuilt.text, "caption");
     }
-
 }

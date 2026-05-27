@@ -1,13 +1,12 @@
 //! Remote ciphertext URLs and the [`Content`] bundle used by the GUI loader.
 //!
-//! See [`Content::fetch_blocking`] and gate helper [`remote_plaintext_matches_destination`].
+//! See [`Content::fetch_blocking`]
 
-use crate::encryption::{IMG_DEST_PATH, TXT_DEST_PATH, decrypt, decrypt_content_and_save};
+use crate::encryption::decrypt_content_and_save;
 use iced::widget::image;
+use iced::{Size, window};
 use reqwest;
-use std::env::var;
 use std::error::Error;
-use std::fs;
 
 /// GitHub URLs for ciphertext that mirror [`encryption::IMG_SRC_PATH`] /
 /// [`encryption::TXT_SRC_PATH`] (**`txt.enc`**, never `text.enc`).
@@ -20,7 +19,6 @@ pub const REMOTE_TEXT_URL: &str =
 #[derive(Clone, Debug)]
 pub struct Content {
     pub image_handle: image::Handle,
-    /// PNG width × height from IHDR, or fallback when the blob is not a PNG.
     pub image_size: (u32, u32),
     pub text: String,
 }
@@ -71,10 +69,11 @@ impl Content {
         let img_response = reqwest::get(img_hook).await?;
         let img_body = img_response.bytes().await?;
 
-        // get the encrypted text
+        // get the encrypted text from the remote store
         let txt_response = reqwest::get(text_hook).await?;
         let txt_body = txt_response.bytes().await?;
 
+        // err if we got empty data
         if img_body.is_empty() || txt_body.is_empty() {
             return Err("remote returned empty encrypted payload".into());
         }
@@ -84,52 +83,22 @@ impl Content {
 
         Ok(result)
     }
-}
 
-/// Compares freshly downloaded ciphertext with what was last decrypted to disk.
-///
-/// When `"PASSWORD"` is present, decrypts BOTH remote payloads and BOTH destination files produced by an
-/// earlier successful run (see [`Content::fetch_blocking`]). Returns `Ok(true)` only when BOTH image/caption
-/// byte strings match pairwise.
-///
-/// Any missing env var, unreadable destinations, networking issues, decryption failures, or mismatch
-/// results in `Ok(false)` unless a hard filesystem / HTTP failure surfaces as `Err(...)`.
-///
-/// # Errors
-///
-/// Network errors from [`reqwest`] or non-missing read failures (permissions, etc.).
-pub async fn remote_plaintext_matches_destination() -> Result<bool, Box<dyn Error>> {
-    let password = match var("PASSWORD") {
-        Ok(p) => p,
-        Err(_) => return Ok(false),
-    };
-
-    let dest_img = match fs::read(IMG_DEST_PATH) {
-        Ok(b) => b,
-        Err(_) => return Ok(false),
-    };
-    let dest_txt = match fs::read(TXT_DEST_PATH) {
-        Ok(b) => b,
-        Err(_) => return Ok(false),
-    };
-
-    let remote_img = reqwest::get(REMOTE_IMG_URL).await?.bytes().await?;
-    let remote_txt = reqwest::get(REMOTE_TEXT_URL).await?.bytes().await?;
-
-    if remote_img.is_empty() || remote_txt.is_empty() {
-        return Ok(false);
+    /// Builds the initial iced window size around the decrypted bitmap plus space for caption text.
+    ///
+    /// Width and height come from [`Content::image_size`]. Adds a fixed vertical band for one line of
+    /// UI text so the inner client area fits image + caption without clipping.
+    ///
+    /// See also [`iced::window::Settings`].
+    pub fn into_window(&self) -> window::Settings {
+        const SPACING: f32 = 8.0;
+        const CAPTION_ROWS: f32 = 26.0;
+        let (w, h) = self.image_size;
+        window::Settings {
+            size: Size::new(w as f32, h as f32 + SPACING + CAPTION_ROWS),
+            ..window::Settings::default()
+        }
     }
-
-    let img_plain = match decrypt(remote_img.as_ref(), &password) {
-        Ok(b) => b,
-        Err(_) => return Ok(false),
-    };
-    let txt_plain = match decrypt(remote_txt.as_ref(), &password) {
-        Ok(b) => b,
-        Err(_) => return Ok(false),
-    };
-
-    Ok(img_plain == dest_img && txt_plain == dest_txt)
 }
 
 #[cfg(test)]
