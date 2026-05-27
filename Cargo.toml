@@ -13,3 +13,9 @@ pbkdf2 = "0.12"
 sha2 = "0.10"
 dotenvy = "0.15"
 dirs = "6.0.0"
+
+[package.metadata.bundle]
+name = "kayleedrop"
+identifier = "com.cfdefense.kayleedrop"
+icon = ["assets/icon.icns"]
+version = "1.0.0"
