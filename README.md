@@ -2,7 +2,7 @@
   <img src="assets/icon.png" alt="kayleeping Icon" width="128" height="128">
   <h1>kayleeping</h1>
   <p>
-    A small, automated "drop" system that periodically fetches encrypted content, decrypts it locally with a shared password, and displays it (image/text) on the target machine. It's less like messaging in the traditional sense and more like a scheduled, one-way encrypted content delivery system.
+    A small, automated pinging system that periodically fetches encrypted content, decrypts it locally with a shared password, and displays it (image/text) on the target machine. It's less like messaging in the traditional sense and more like a scheduled, one-way encrypted content delivery system.
   </p>
   <p>
     <em>Originally designed to send my girlfriend goofy pictures occasionally.</em>
