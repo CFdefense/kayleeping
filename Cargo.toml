@@ -1,5 +1,5 @@
 [package]
-name = "kayleedrop"
+name = "kayleeping"
 version = "0.1.0"
 edition = "2024"
 
@@ -15,7 +15,7 @@ dotenvy = "0.15"
 dirs = "6.0.0"
 
 [package.metadata.bundle]
-name = "kayleedrop"
-identifier = "com.cfdefense.kayleedrop"
+name = "kayleeping"
+identifier = "com.cfdefense.kayleeping"
 icon = ["assets/icon.icns"]
 version = "1.0.0"

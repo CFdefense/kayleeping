@@ -53,7 +53,7 @@ pub fn load_password() -> Result<String, Box<dyn Error>> {
     })
 }
 
-/// Function to resolve the general kayleedrop dir
+/// Function to resolve the general kayleeping dir
 ///
 /// Will create all directories if needed
 ///
@@ -62,7 +62,7 @@ pub fn load_password() -> Result<String, Box<dyn Error>> {
 pub fn app_data_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let dir = dirs::data_local_dir()
         .expect("failed to locate app data dir")
-        .join("kayleedrop");
+        .join("kayleeping");
 
     fs::create_dir_all(&dir)?;
 

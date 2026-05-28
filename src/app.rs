@@ -11,7 +11,7 @@ use iced::{
 /// Default window title surfaced in iced window chrome.
 ///
 /// Duplicated verbatim into [`MyApp::title`] during construction.
-pub const TITLE: &str = "kayleedrop";
+pub const TITLE: &str = "kayleeping";
 
 /// Holds UI state - either successfully loaded content or an error to display.
 ///

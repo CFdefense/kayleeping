@@ -1,6 +1,6 @@
 <div align="center">
-  <img src="assets/icon.png" alt="KayleeDrop Icon" width="128" height="128">
-  <h1>KayleeDrop</h1>
+  <img src="assets/icon.png" alt="kayleeping Icon" width="128" height="128">
+  <h1>kayleeping</h1>
   <p>
     A small, automated "drop" system that periodically fetches encrypted content, decrypts it locally with a shared password, and displays it (image/text) on the target machine. It's less like messaging in the traditional sense and more like a scheduled, one-way encrypted content delivery system.
   </p>
@@ -13,7 +13,7 @@
 
 ### 1. Download the Latest Release
 
-Download the latest `.app` release from [GitHub Releases](https://github.com/CFdefense/kayleedrop/releases)
+Download the latest `.app` release from [GitHub Releases](https://github.com/CFdefense/kayleeping/releases)
 
 - **macOS**: Download the `.app` bundle and move it to your Applications folder
 - **Linux**: Download the appropriate binary for your system
@@ -23,23 +23,23 @@ Download the latest `.app` release from [GitHub Releases](https://github.com/CFd
 After downloading, remove the quarantine attribute to prevent "damaged app" warnings:
 
 ```bash
-xattr -cr /Applications/kayleedrop.app
+xattr -cr /Applications/kayleeping.app
 ```
 
 ### 2. Setup Configuration Directory
 
-Create the KayleeDrop configuration directory:
+Create the kayleeping configuration directory:
 
 #### macOS
 
 ```bash
-mkdir -p ~/Library/Application\ Support/kayleedrop
+mkdir -p ~/Library/Application\ Support/kayleeping
 ```
 
 #### Linux
 
 ```bash
-mkdir -p ~/.local/share/kayleedrop
+mkdir -p ~/.local/share/kayleeping
 ```
 
 ### 3. Create Password File
@@ -49,13 +49,13 @@ Create a `.env` file in the configuration directory with your password:
 #### macOS
 
 ```bash
-echo "PASSWORD=your-password-here" > ~/Library/Application\ Support/kayleedrop/.env
+echo "PASSWORD=your-password-here" > ~/Library/Application\ Support/kayleeping/.env
 ```
 
 #### Linux
 
 ```bash
-echo "PASSWORD=your-password-here" > ~/.local/share/kayleedrop/.env
+echo "PASSWORD=your-password-here" > ~/.local/share/kayleeping/.env
 ```
 
 **Important**: The `.env` file must contain exactly:
@@ -70,8 +70,8 @@ Make sure there's no `#` comment symbol at the start of the line.
 
 The app automatically looks for configuration in these platform-specific locations:
 
-- **macOS**: `~/Library/Application Support/kayleedrop/.env`
-- **Linux**: `~/.local/share/kayleedrop/.env`
+- **macOS**: `~/Library/Application Support/kayleeping/.env`
+- **Linux**: `~/.local/share/kayleeping/.env`
 
 ## Running the App
 
@@ -83,7 +83,7 @@ Simply launch the app:
 - **Linux**: Run the binary from terminal
 
 ```bash
-./kayleedrop
+./kayleeping
 ```
 
 The app will:
@@ -98,7 +98,7 @@ The app will:
 To encrypt new content for distribution:
 
 ```bash
-PASSWORD='your-password' ./kayleedrop /path/to/image.png "Your caption text"
+PASSWORD='your-password' ./kayleeping /path/to/image.png "Your caption text"
 ```
 
 This encrypts the image and text, writing ciphertext to `data/source/img.enc` and `data/source/txt.enc`. You can then publish these encrypted files to your GitHub repository.
@@ -112,8 +112,8 @@ Requirements:
 
 ```bash
 # Clone the repository
-git clone https://github.com/CFdefense/kayleedrop.git
-cd kayleedrop
+git clone https://github.com/CFdefense/kayleeping.git
+cd kayleeping
 
 # Create .env file in project root or set PASSWORD environment variable
 echo "PASSWORD=your-password" > .env
@@ -124,7 +124,7 @@ cargo run
 # Build release binary
 cargo build --release
 
-# The binary will be at: target/release/kayleedrop
+# The binary will be at: target/release/kayleeping
 ```
 
 ### Encrypting Content for Distribution
@@ -158,15 +158,15 @@ After encrypting, commit and push the `data/source/*.enc` files to your GitHub r
 If you see "PASSWORD not found in environment or .env file":
 
 1. **Verify file location**: Check that `.env` exists in the correct directory:
-   - macOS: `~/Library/Application Support/kayleedrop/.env`
-   - Linux: `~/.local/share/kayleedrop/.env`
+   - macOS: `~/Library/Application Support/kayleeping/.env`
+   - Linux: `~/.local/share/kayleeping/.env`
 
 2. **Check file contents**: The file must contain `PASSWORD=your-password` with no `#` at the start
 
 3. **Check permissions**: Ensure the file is readable:
    ```bash
-   chmod 600 ~/.local/share/kayleedrop/.env  # Linux
-   chmod 600 ~/Library/Application\ Support/kayleedrop/.env  # macOS
+   chmod 600 ~/.local/share/kayleeping/.env  # Linux
+   chmod 600 ~/Library/Application\ Support/kayleeping/.env  # macOS
    ```
 
 ### Network Errors
@@ -188,7 +188,7 @@ If decryption fails:
 ### GUI Doesn't Launch
 
 - **macOS**: If you see a security warning, go to System Preferences → Security & Privacy and allow the app
-- **Linux**: Ensure the binary has execute permissions: `chmod +x kayleedrop`
+- **Linux**: Ensure the binary has execute permissions: `chmod +x kayleeping`
 
 ## How It Works
 

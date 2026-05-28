@@ -19,7 +19,7 @@ use crate::content::{Content, REMOTE_IMG_URL, REMOTE_TEXT_URL};
 fn main() -> Result<(), Box<dyn Error>> {
     // next get the arguments provided in the call
     let args: Vec<String> = args().collect();
-    let bin = args.first().map(String::as_str).unwrap_or("kayleedrop");
+    let bin = args.first().map(String::as_str).unwrap_or("kayleeping");
 
     match args.len() {
         1 => run_gui(),

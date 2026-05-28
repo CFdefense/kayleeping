@@ -12,9 +12,9 @@ use std::error::Error;
 /// GitHub URLs for ciphertext that mirror [`encryption::IMG_SRC_PATH`] /
 /// [`encryption::TXT_SRC_PATH`] (**`txt.enc`**, never `text.enc`).
 pub const REMOTE_IMG_URL: &str =
-    "https://raw.githubusercontent.com/CFdefense/kayleedrop/main/data/source/img.enc";
+    "https://raw.githubusercontent.com/CFdefense/kayleeping/main/data/source/img.enc";
 pub const REMOTE_TEXT_URL: &str =
-    "https://raw.githubusercontent.com/CFdefense/kayleedrop/main/data/source/txt.enc";
+    "https://raw.githubusercontent.com/CFdefense/kayleeping/main/data/source/txt.enc";
 
 /// Bundle of decrypted image handle, intrinsic PNG size (when applicable), and caption text.
 #[derive(Clone, Debug)]

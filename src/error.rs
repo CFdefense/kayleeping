@@ -88,8 +88,8 @@ impl AppError {
                 "Create a .env file in your app data directory with PASSWORD=your_password".to_string(),
                 format!("App data directory: {}", 
                     dirs::data_local_dir()
-                        .map(|p| p.join("kayleedrop").display().to_string())
-                        .unwrap_or_else(|| "~/.local/share/kayleedrop (Linux) or ~/Library/Application Support/kayleedrop (macOS)".to_string())
+                        .map(|p| p.join("kayleeping").display().to_string())
+                        .unwrap_or_else(|| "~/.local/share/kayleeping (Linux) or ~/Library/Application Support/kayleeping (macOS)".to_string())
                 ),
             ],
             AppError::NetworkError { .. } => vec![
